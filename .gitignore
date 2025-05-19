@@ -1,0 +1,18 @@
+# Bỏ qua môi trường ảo
+.venv/
+
+# Bỏ qua file lớn
+input/ratings.dat
+input/movies.dat
+input/tags.dat
+
+# Bỏ qua cache Python
+__pycache__/
+*.py[cod]
+
+# Bỏ qua file PDF báo cáo (nếu không muốn đẩy lên)
+report/Đề bài 1.pdf
+
+# Bỏ qua các file log hoặc tạm (nếu có)
+*.log
+*.tmp
