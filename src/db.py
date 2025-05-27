@@ -3,7 +3,7 @@ import mysql.connector
 def get_connection():
     conn = mysql.connector.connect(
         host='localhost',
-        user='root',       # <-- bạn cần sửa đúng user MySQL
+        user='thang',       # <-- bạn cần sửa đúng user MySQL
         password='123456',   # <-- và password
         database='csdlpt'    # <-- và tên database đã tạo
     )
