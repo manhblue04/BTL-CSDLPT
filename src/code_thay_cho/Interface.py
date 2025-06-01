@@ -1,29 +1,58 @@
-#!/usr/bin/python2.7
-#
-# Interface for the assignement
-#
-
-import psycopg2
-
-DATABASE_NAME = 'dds_assgn1'
+# import psycopg2
+import mysql.connector
 
 
-def getopenconnection(user='postgres', password='1234', dbname='postgres'):
-    return psycopg2.connect("dbname='" + dbname + "' user='" + user + "' host='localhost' password='" + password + "'")
+# Hàm này tạo và trả về một kết nối đến cơ sở dữ liệu MySQL
+# với các thông tin đăng nhập mặc định.
+def getopenconnection(user='root', password='123456', dbname='csdlpt'):
+    return mysql.connector.connect(
+        host='localhost',
+        user=user,
+        password=password,
+        database=dbname
+    )
 
+# Hàm này tạo một database MySQL nếu nó chưa tồn tại.
+def create_db(dbname):
+    con = mysql.connector.connect(
+        host='localhost',
+        user='root',
+        password='123456'
+    )
+    cur = con.cursor()
+    cur.execute(f"CREATE DATABASE IF NOT EXISTS `{dbname}`;")
+    cur.close()
+    con.close()
 
-def loadratings(ratingstablename, ratingsfilepath, openconnection): 
-    """
-    Function to load data in @ratingsfilepath file to a table called @ratingstablename.
-    """
-    create_db(DATABASE_NAME)
+# Hàm này tải dữ liệu từ file ratings vào một bảng trong cơ sở dữ liệu.
+def loadratings(ratingstablename, ratingsfilepath, openconnection):
+    # Tạo database nếu chưa có
+    create_db(openconnection.database)
     con = openconnection
     cur = con.cursor()
-    cur.execute("create table " + ratingstablename + "(userid integer, extra1 char, movieid integer, extra2 char, rating float, extra3 char, timestamp bigint);")
-    cur.copy_from(open(ratingsfilepath),ratingstablename,sep=':')
-    cur.execute("alter table " + ratingstablename + " drop column extra1, drop column extra2, drop column extra3, drop column timestamp;")
+    
+    # Tạo bảng nếu chưa tồn tại
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS {ratingstablename} (
+            userid INT,
+            movieid INT,
+            rating FLOAT
+        );
+    """)
+    
+    # Đọc file và chèn dữ liệu
+    with open(ratingsfilepath, 'r') as file:
+        for line in file:
+            parts = line.strip().split('::')
+            if len(parts) >= 3:
+                userid = int(parts[0])
+                movieid = int(parts[1])
+                rating = float(parts[2])
+                cur.execute(f"INSERT INTO {ratingstablename} (userid, movieid, rating) VALUES (%s, %s, %s);", (userid, movieid, rating))
     cur.close()
     con.commit()
+
+
 
 def rangepartition(ratingstablename, numberofpartitions, openconnection):
     """
@@ -44,7 +73,6 @@ def rangepartition(ratingstablename, numberofpartitions, openconnection):
             cur.execute("insert into " + table_name + " (userid, movieid, rating) select userid, movieid, rating from " + ratingstablename + " where rating > " + str(minRange) + " and rating <= " + str(maxRange) + ";")
     cur.close()
     con.commit()
-
 def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
     """
     Function to create partitions of main table using round robin approach.
@@ -58,7 +86,6 @@ def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
         cur.execute("insert into " + table_name + " (userid, movieid, rating) select userid, movieid, rating from (select userid, movieid, rating, ROW_NUMBER() over() as rnum from " + ratingstablename + ") as temp where mod(temp.rnum-1, 5) = " + str(i) + ";")
     cur.close()
     con.commit()
-
 def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     """
     Function to insert a new row into the main table and specific partition based on round robin
@@ -76,7 +103,6 @@ def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     cur.execute("insert into " + table_name + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
     cur.close()
     con.commit()
-
 def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
     """
     Function to insert a new row into the main table and specific partition based on range rating.
@@ -93,30 +119,6 @@ def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
     cur.execute("insert into " + table_name + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
     cur.close()
     con.commit()
-
-def create_db(dbname):
-    """
-    We create a DB by connecting to the default user and database of Postgres
-    The function first checks if an existing database exists for a given name, else creates it.
-    :return:None
-    """
-    # Connect to the default database
-    con = getopenconnection(dbname='postgres')
-    con.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
-    cur = con.cursor()
-
-    # Check if an existing database with the same name exists
-    cur.execute('SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname=\'%s\'' % (dbname,))
-    count = cur.fetchone()[0]
-    if count == 0:
-        cur.execute('CREATE DATABASE %s' % (dbname,))  # Create the database
-    else:
-        print('A database named {0} already exists'.format(dbname))
-
-    # Clean up
-    cur.close()
-    con.close()
-
 def count_partitions(prefix, openconnection):
     """
     Function to count the number of tables which have the @prefix in their name somewhere.
