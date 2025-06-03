@@ -70,83 +70,121 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
         cur.close()
 
 
-# def rangepartition(ratingstablename, numberofpartitions, openconnection):
-#     """
-#     Function to create partitions of main table based on range of ratings.
-#     """
-#     con = openconnection
-#     cur = con.cursor()
-#     delta = 5 / numberofpartitions
-#     RANGE_TABLE_PREFIX = 'range_part'
-#     for i in range(0, numberofpartitions):
-#         minRange = i * delta
-#         maxRange = minRange + delta
-#         table_name = RANGE_TABLE_PREFIX + str(i)
-#         cur.execute("create table " + table_name + " (userid integer, movieid integer, rating float);")
-#         if i == 0:
-#             cur.execute("insert into " + table_name + " (userid, movieid, rating) select userid, movieid, rating from " + ratingstablename + " where rating >= " + str(minRange) + " and rating <= " + str(maxRange) + ";")
-#         else:
-#             cur.execute("insert into " + table_name + " (userid, movieid, rating) select userid, movieid, rating from " + ratingstablename + " where rating > " + str(minRange) + " and rating <= " + str(maxRange) + ";")
-#     cur.close()
-#     con.commit()
+def rangepartition(ratingstablename, numberofpartitions,openconnection):
+    if numberofpartitions <= 0:
+        return
+    
+    connection = None
+    cursor = None
+    try:
+        connection = openconnection
+        cursor = connection.cursor()
+        
+        cursor.execute("""
+            SELECT tablename 
+            FROM pg_tables 
+            WHERE tablename LIKE 'range_part%';
+        """)
+        old_tables = cursor.fetchall()
+        for table_tuple in old_tables:
+            table_name = table_tuple[0]
+            cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS metadata (
+                partition_type TEXT,
+                num_partitions INTEGER,
+                range_boundaries TEXT
+            );
+        """)
+        
+        cursor.execute("DELETE FROM metadata WHERE partition_type = 'range';")
+        
+        max_rating = 5.0
+        min_rating = 0.0
+        delta = (max_rating - min_rating) / numberofpartitions
+        boundaries = [min_rating + i * delta for i in range(numberofpartitions + 1)]
+        
+        boundaries_str = ",".join(str(round(b, 2)) for b in boundaries)
+        
+        cursor.execute("""
+            INSERT INTO metadata (partition_type, num_partitions, range_boundaries)
+            VALUES (%s, %s, %s);
+        """, ('range', numberofpartitions, boundaries_str))
+        
+        for i in range(numberofpartitions):
+            table_name = f"range_part{i}"
+            cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {table_name} (
+                    userid INTEGER,
+                    movieid INTEGER,
+                    rating FLOAT
+                );
+            """)
+            cursor.execute(f"DELETE FROM {table_name};")
+            
+            if i == 0:
+                cursor.execute(f"""
+                    INSERT INTO {table_name} (userid, movieid, rating)
+                    SELECT userid, movieid, rating FROM {ratingstablename}
+                    WHERE rating >= %s AND rating <= %s;
+                """, (boundaries[i], boundaries[i + 1]))
+            else:
+                cursor.execute(f"""
+                    INSERT INTO {table_name} (userid, movieid, rating)
+                    SELECT userid, movieid, rating FROM {ratingstablename}
+                    WHERE rating > %s AND rating <= %s;
+                """, (boundaries[i], boundaries[i + 1]))
+        
+        connection.commit()
+    except Exception as e:
+        if connection:
+            connection.rollback()
+        raise e
+    finally:
+        if cursor:
+            cursor.close()
 
-# def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
-#     """
-#     Function to create partitions of main table using round robin approach.
-#     """
-#     con = openconnection
-#     cur = con.cursor()
-#     RROBIN_TABLE_PREFIX = 'rrobin_part'
-#     for i in range(0, numberofpartitions):
-#         table_name = RROBIN_TABLE_PREFIX + str(i)
-#         cur.execute("create table " + table_name + " (userid integer, movieid integer, rating float);")
-#         cur.execute("insert into " + table_name + " (userid, movieid, rating) select userid, movieid, rating from (select userid, movieid, rating, ROW_NUMBER() over() as rnum from " + ratingstablename + ") as temp where mod(temp.rnum-1, 5) = " + str(i) + ";")
-#     cur.close()
-#     con.commit()
-
-# def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
-#     """
-#     Function to insert a new row into the main table and specific partition based on round robin
-#     approach.
-#     """
-#     con = openconnection
-#     cur = con.cursor()
-#     RROBIN_TABLE_PREFIX = 'rrobin_part'
-#     cur.execute("insert into " + ratingstablename + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
-#     cur.execute("select count(*) from " + ratingstablename + ";");
-#     total_rows = (cur.fetchall())[0][0]
-#     numberofpartitions = count_partitions(RROBIN_TABLE_PREFIX, openconnection)
-#     index = (total_rows-1) % numberofpartitions
-#     table_name = RROBIN_TABLE_PREFIX + str(index)
-#     cur.execute("insert into " + table_name + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
-#     cur.close()
-#     con.commit()
-
-# def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
-#     """
-#     Function to insert a new row into the main table and specific partition based on range rating.
-#     """
-#     con = openconnection
-#     cur = con.cursor()
-#     RANGE_TABLE_PREFIX = 'range_part'
-#     numberofpartitions = count_partitions(RANGE_TABLE_PREFIX, openconnection)
-#     delta = 5 / numberofpartitions
-#     index = int(rating / delta)
-#     if rating % delta == 0 and index != 0:
-#         index = index - 1
-#     table_name = RANGE_TABLE_PREFIX + str(index)
-#     cur.execute("insert into " + table_name + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
-#     cur.close()
-#     con.commit()
-
-# def count_partitions(prefix, openconnection):
-#     """
-#     Function to count the number of tables which have the @prefix in their name somewhere.
-#     """
-#     con = openconnection
-#     cur = con.cursor()
-#     cur.execute("select count(*) from pg_stat_user_tables where relname like " + "'" + prefix + "%';")
-#     count = cur.fetchone()[0]
-#     cur.close()
-
-#     return count
+def rangeinsert(ratingstablename, userid, itemid, rating,openconnection):
+    if not (0 <= rating <= 5):
+        raise Exception("Rating must be between 0 and 5")
+    if not (isinstance(userid, int) and isinstance(itemid, int) and userid > 0 and itemid > 0):
+        raise Exception("UserID and MovieID must be positive integers.")
+    
+    connection = None
+    cursor = None
+    try:
+        connection = openconnection
+        cursor = connection.cursor()
+        
+        cursor.execute(f"""
+            INSERT INTO {ratingstablename} (userid, movieid, rating)
+            VALUES (%s, %s, %s);
+        """, (userid, itemid, rating))
+        
+        cursor.execute("SELECT num_partitions, range_boundaries FROM metadata WHERE partition_type = 'range';")
+        result = cursor.fetchone()
+        if not result:
+            raise Exception("No range partition metadata found.")
+        
+        num_partitions, boundaries_str = result[0], result[1]
+        boundaries = [float(x) for x in boundaries_str.split(",")]
+        
+        for i in range(num_partitions):
+            if boundaries[i] <= rating <= boundaries[i + 1]:
+                table_name = f"range_part{i}"
+                cursor.execute(f"""
+                    INSERT INTO {table_name} (userid, movieid, rating)
+                    VALUES (%s, %s, %s);
+                """, (userid, itemid, rating))
+                break
+        
+        connection.commit()
+    except Exception as e:
+        if connection:
+            connection.rollback()
+        raise e
+    finally:
+        if cursor:
+            cursor.close()
+    
