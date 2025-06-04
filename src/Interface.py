@@ -70,7 +70,7 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
         cur.close()
 
 
-def rangepartition(ratingstablename, numberofpartitions,openconnection):
+def rangepartition(ratingstablename, numberofpartitions, openconnection):
     if numberofpartitions <= 0:
         return
     
@@ -145,7 +145,7 @@ def rangepartition(ratingstablename, numberofpartitions,openconnection):
         if cursor:
             cursor.close()
 
-def rangeinsert(ratingstablename, userid, itemid, rating,openconnection):
+def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
     if not (0 <= rating <= 5):
         raise Exception("Rating must be between 0 and 5")
     if not (isinstance(userid, int) and isinstance(itemid, int) and userid > 0 and itemid > 0):
@@ -187,4 +187,61 @@ def rangeinsert(ratingstablename, userid, itemid, rating,openconnection):
     finally:
         if cursor:
             cursor.close()
+            
+
+def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
+    if numberofpartitions <= 0:
+        return
+
+    cur = openconnection.cursor()
     
+    RROBIN_TABLE_PREFIX = 'rrobin_part'
+
+    # Xoá các phân mảnh cũ (nếu có) và tạo phân mảnh mới
+    for i in range(numberofpartitions):
+        cur.execute(f"DROP TABLE IF EXISTS {RROBIN_TABLE_PREFIX}{i};")
+        cur.execute(f"""
+            CREATE TABLE {RROBIN_TABLE_PREFIX}{i} (
+                userid INT,
+                itemid INT,
+                rating FLOAT
+            );
+        """)
+
+    # Tạo metadata lưu trạng thái vòng tròn
+    cur.execute("DROP TABLE IF EXISTS rrobin_metadata;")
+    cur.execute("CREATE TABLE rrobin_metadata (partition_count INT, next_index INT);")
+    cur.execute("INSERT INTO rrobin_metadata VALUES (%s, 0);", (numberofpartitions,))
+
+    # Lấy toàn bộ dữ liệu từ bảng chính
+    cur.execute(f"SELECT userid, itemid, rating FROM {ratingstablename};")
+    rows = cur.fetchall()
+
+    # Chèn dữ liệu vào các phân mảnh
+    for i, row in enumerate(rows):
+        target_partition = i % numberofpartitions
+        cur.execute(f"INSERT INTO {RROBIN_TABLE_PREFIX}{target_partition} VALUES (%s, %s, %s);", row)
+
+    openconnection.commit()
+    cur.close()
+
+    
+def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
+    cur = openconnection.cursor()
+
+    # Chèn vào bảng Ratings
+    cur.execute(f"INSERT INTO {ratingstablename} (userid, itemid, rating) VALUES (%s, %s, %s);", (userid, itemid, rating))
+
+    # Lấy thông tin metadata
+    cur.execute("SELECT partition_count, next_index FROM rrobin_metadata;")
+    partition_count, next_index = cur.fetchone()
+
+    # Tính phân mảnh tiếp theo cần chèn
+    target_partition = next_index % partition_count
+    cur.execute(f"INSERT INTO rrobin_part{target_partition} (userid, itemid, rating) VALUES (%s, %s, %s);", (userid, itemid, rating))
+
+    # Cập nhật chỉ số vòng tròn
+    cur.execute("UPDATE rrobin_metadata SET next_index = %s;", (next_index + 1,))
+
+    openconnection.commit()
+    cur.close()
