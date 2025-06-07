@@ -7,7 +7,7 @@ import psycopg2
 
 DATABASE_NAME = 'dds_assgn1'
 
-def getopenconnection(user='postgres', password='123456', dbname='postgres'):
+def getopenconnection(user='postgres', password='duyha2k4', dbname='postgres'):
     return psycopg2.connect("dbname='" + dbname + "' user='" + user + "' host='localhost' password='" + password + "'")
 
 def create_db(dbname):
@@ -203,7 +203,7 @@ def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
         cur.execute(f"""
             CREATE TABLE {RROBIN_TABLE_PREFIX}{i} (
                 userid INT,
-                itemid INT,
+                movieid INT,
                 rating FLOAT
             );
         """)
@@ -214,7 +214,7 @@ def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
     cur.execute("INSERT INTO rrobin_metadata VALUES (%s, 0);", (numberofpartitions,))
 
     # Lấy toàn bộ dữ liệu từ bảng chính
-    cur.execute(f"SELECT userid, itemid, rating FROM {ratingstablename};")
+    cur.execute(f"SELECT userid, movieid, rating FROM {ratingstablename};")
     rows = cur.fetchall()
 
     # Chèn dữ liệu vào các phân mảnh
@@ -230,7 +230,7 @@ def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     cur = openconnection.cursor()
 
     # Chèn vào bảng Ratings
-    cur.execute(f"INSERT INTO {ratingstablename} (userid, itemid, rating) VALUES (%s, %s, %s);", (userid, itemid, rating))
+    cur.execute(f"INSERT INTO {ratingstablename} (userid, movieid, rating) VALUES (%s, %s, %s);", (userid, itemid, rating))
 
     # Lấy thông tin metadata
     cur.execute("SELECT partition_count, next_index FROM rrobin_metadata;")
@@ -238,7 +238,7 @@ def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
 
     # Tính phân mảnh tiếp theo cần chèn
     target_partition = next_index % partition_count
-    cur.execute(f"INSERT INTO rrobin_part{target_partition} (userid, itemid, rating) VALUES (%s, %s, %s);", (userid, itemid, rating))
+    cur.execute(f"INSERT INTO rrobin_part{target_partition} (userid, movieid, rating) VALUES (%s, %s, %s);", (userid, itemid, rating))
 
     # Cập nhật chỉ số vòng tròn
     cur.execute("UPDATE rrobin_metadata SET next_index = %s;", (next_index + 1,))
