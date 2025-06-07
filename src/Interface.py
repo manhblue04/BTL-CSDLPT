@@ -236,9 +236,11 @@ def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     cur.execute("SELECT partition_count, next_index FROM rrobin_metadata;")
     partition_count, next_index = cur.fetchone()
 
+    RROBIN_TABLE_PREFIX = 'rrobin_part'
+    
     # Tính phân mảnh tiếp theo cần chèn
     target_partition = next_index % partition_count
-    cur.execute(f"INSERT INTO rrobin_part{target_partition} (userid, movieid, rating) VALUES (%s, %s, %s);", (userid, itemid, rating))
+    cur.execute(f"INSERT INTO {RROBIN_TABLE_PREFIX}{target_partition} (userid, movieid, rating) VALUES (%s, %s, %s);", (userid, itemid, rating))
 
     # Cập nhật chỉ số vòng tròn
     cur.execute("UPDATE rrobin_metadata SET next_index = %s;", (next_index + 1,))
