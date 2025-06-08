@@ -110,8 +110,10 @@ def rangepartition(ratingstablename, numberofpartitions, openconnection):
         delta = (max_rating - min_rating) / numberofpartitions
         boundaries = [min_rating + i * delta for i in range(numberofpartitions + 1)]
         
-        boundaries_str = ",".join(str(round(b, 2)) for b in boundaries)
-        
+        # Làm tròn lên 2 chữ số thập phân
+        boundaries = [round(b * 100 + 0.5) / 100 for b in boundaries]
+        boundaries_str = ",".join(str(b) for b in boundaries)
+
         # Lưu thông tin phân vùng vào metadata
         cursor.execute("""
             INSERT INTO metadata (partition_type, num_partitions, range_boundaries)
@@ -173,23 +175,21 @@ def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
         """, (userid, itemid, rating))
         
         # Lấy thông tin phân vùng từ metadata
-        cursor.execute("SELECT num_partitions, range_boundaries FROM metadata WHERE partition_type = 'range';")
-        result = cursor.fetchone()
-        if not result:
-            raise Exception("No range partition metadata found.")
+        cursor.execute("SELECT num_partitions FROM metadata WHERE partition_type = 'range';")
+        num_partitions = cursor.fetchone()[0]
         
-        num_partitions, boundaries_str = result[0], result[1]
-        boundaries = [float(x) for x in boundaries_str.split(",")]
+        # Tính trực tiếp phân mảnh dựa trên rating
+        partition_size = round(5.0 / num_partitions, 2)
+        partition_index = int(rating / partition_size)
+        if rating % partition_size == 0 and rating != 0:
+            partition_index -= 1
         
-        # Tìm và chèn vào phân vùng phù hợp
-        for i in range(num_partitions):
-            if boundaries[i] <= rating <= boundaries[i + 1]:
-                table_name = f"{RANGE_TABLE_PREFIX}{i}"
-                cursor.execute(f"""
-                    INSERT INTO {table_name} (userid, movieid, rating)
-                    VALUES (%s, %s, %s);
-                """, (userid, itemid, rating))
-                break
+        # Chèn vào phân mảnh tương ứng
+        table_name = f"{RANGE_TABLE_PREFIX}{partition_index}"
+        cursor.execute(f"""
+            INSERT INTO {table_name} (userid, movieid, rating)
+            VALUES (%s, %s, %s);
+        """, (userid, itemid, rating))
         
         connection.commit()
     except Exception as e:
@@ -198,8 +198,7 @@ def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
         raise e
     finally:
         if cursor:
-            cursor.close()
-            
+            cursor.close()            
 
 def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
     if numberofpartitions <= 0:
