@@ -4,10 +4,11 @@
 #
 
 import psycopg2
+import io
 
 DATABASE_NAME = 'dds_assgn1'
 
-def getopenconnection(user='postgres', password='duyha2k4', dbname='postgres'):
+def getopenconnection(user='postgres', password='123456', dbname='postgres'):
     return psycopg2.connect("dbname='" + dbname + "' user='" + user + "' host='localhost' password='" + password + "'")
 
 def create_db(dbname):
@@ -80,6 +81,9 @@ def rangepartition(ratingstablename, numberofpartitions, openconnection):
         connection = openconnection
         cursor = connection.cursor()
         
+        RANGE_TABLE_PREFIX = 'range_part'
+
+        # Xóa các bảng phân vùng cũ
         cursor.execute("""
             SELECT tablename 
             FROM pg_tables 
@@ -90,6 +94,7 @@ def rangepartition(ratingstablename, numberofpartitions, openconnection):
             table_name = table_tuple[0]
             cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
         
+        # Tạo bảng metadata để lưu thông tin phân vùng
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS metadata (
                 partition_type TEXT,
@@ -100,20 +105,25 @@ def rangepartition(ratingstablename, numberofpartitions, openconnection):
         
         cursor.execute("DELETE FROM metadata WHERE partition_type = 'range';")
         
+        # Tính toán ranh giới cho các phân vùng
         max_rating = 5.0
         min_rating = 0.0
         delta = (max_rating - min_rating) / numberofpartitions
         boundaries = [min_rating + i * delta for i in range(numberofpartitions + 1)]
         
-        boundaries_str = ",".join(str(round(b, 2)) for b in boundaries)
-        
+        # Làm tròn lên 2 chữ số thập phân
+        boundaries = [round(b * 100 + 0.5) / 100 for b in boundaries]
+        boundaries_str = ",".join(str(b) for b in boundaries)
+
+        # Lưu thông tin phân vùng vào metadata
         cursor.execute("""
             INSERT INTO metadata (partition_type, num_partitions, range_boundaries)
             VALUES (%s, %s, %s);
         """, ('range', numberofpartitions, boundaries_str))
         
+        # Tạo và phân phối dữ liệu cho các phân vùng
         for i in range(numberofpartitions):
-            table_name = f"range_part{i}"
+            table_name = f"{RANGE_TABLE_PREFIX}{i}"
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {table_name} (
                     userid INTEGER,
@@ -156,28 +166,31 @@ def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
     try:
         connection = openconnection
         cursor = connection.cursor()
-        
+
+        RANGE_TABLE_PREFIX = 'range_part'
+
+        # Chèn dữ liệu vào bảng chính
         cursor.execute(f"""
             INSERT INTO {ratingstablename} (userid, movieid, rating)
             VALUES (%s, %s, %s);
         """, (userid, itemid, rating))
         
-        cursor.execute("SELECT num_partitions, range_boundaries FROM metadata WHERE partition_type = 'range';")
-        result = cursor.fetchone()
-        if not result:
-            raise Exception("No range partition metadata found.")
+        # Lấy thông tin phân vùng từ metadata
+        cursor.execute("SELECT num_partitions FROM metadata WHERE partition_type = 'range';")
+        num_partitions = cursor.fetchone()[0]
         
-        num_partitions, boundaries_str = result[0], result[1]
-        boundaries = [float(x) for x in boundaries_str.split(",")]
+        # Tính trực tiếp phân mảnh dựa trên rating
+        partition_size = round(5.0 / num_partitions, 2)
+        partition_index = int(rating / partition_size)
+        if rating % partition_size == 0 and rating != 0:
+            partition_index -= 1
         
-        for i in range(num_partitions):
-            if boundaries[i] <= rating <= boundaries[i + 1]:
-                table_name = f"range_part{i}"
-                cursor.execute(f"""
-                    INSERT INTO {table_name} (userid, movieid, rating)
-                    VALUES (%s, %s, %s);
-                """, (userid, itemid, rating))
-                break
+        # Chèn vào phân mảnh tương ứng
+        table_name = f"{RANGE_TABLE_PREFIX}{partition_index}"
+        cursor.execute(f"""
+            INSERT INTO {table_name} (userid, movieid, rating)
+            VALUES (%s, %s, %s);
+        """, (userid, itemid, rating))
         
         connection.commit()
     except Exception as e:
@@ -186,64 +199,83 @@ def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
         raise e
     finally:
         if cursor:
-            cursor.close()
-            
+            cursor.close()            
+
 
 def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
     if numberofpartitions <= 0:
         return
 
-    cur = openconnection.cursor()
-    
-    RROBIN_TABLE_PREFIX = 'rrobin_part'
+    try:
+        cur = openconnection.cursor()
+        RROBIN_TABLE_PREFIX = 'rrobin_part'
 
-    # Xoá các phân mảnh cũ (nếu có) và tạo phân mảnh mới
-    for i in range(numberofpartitions):
-        cur.execute(f"DROP TABLE IF EXISTS {RROBIN_TABLE_PREFIX}{i};")
-        cur.execute(f"""
-            CREATE TABLE {RROBIN_TABLE_PREFIX}{i} (
-                userid INT,
-                movieid INT,
-                rating FLOAT
-            );
-        """)
+        # Xóa và tạo lại các bảng phân mảnh
+        for i in range(numberofpartitions):
+            cur.execute(f"DROP TABLE IF EXISTS {RROBIN_TABLE_PREFIX}{i};")
+            cur.execute(f"""
+                CREATE TABLE {RROBIN_TABLE_PREFIX}{i} (
+                    userid INT,
+                    movieid INT,
+                    rating FLOAT
+                );
+            """)
 
-    # Tạo metadata lưu trạng thái vòng tròn
-    cur.execute("DROP TABLE IF EXISTS rrobin_metadata;")
-    cur.execute("CREATE TABLE rrobin_metadata (partition_count INT, next_index INT);")
-    cur.execute("INSERT INTO rrobin_metadata VALUES (%s, 0);", (numberofpartitions,))
+        # Tạo lại bảng metadata lưu tổng số phân mảnh và chỉ số tiếp theo của bảng cần chèn
+        cur.execute("DROP TABLE IF EXISTS rrobin_metadata;")
+        cur.execute("CREATE TABLE rrobin_metadata (partition_count INT, next_index INT);")
+        cur.execute("INSERT INTO rrobin_metadata VALUES (%s, 0);", (numberofpartitions,))
 
-    # Lấy toàn bộ dữ liệu từ bảng chính
-    cur.execute(f"SELECT userid, movieid, rating FROM {ratingstablename};")
-    rows = cur.fetchall()
+        # Lấy dữ liệu từ bảng chính
+        cur.execute(f"SELECT userid, movieid, rating FROM {ratingstablename};")
+        rows = cur.fetchall()
 
-    # Chèn dữ liệu vào các phân mảnh
-    for i, row in enumerate(rows):
-        target_partition = i % numberofpartitions
-        cur.execute(f"INSERT INTO {RROBIN_TABLE_PREFIX}{target_partition} VALUES (%s, %s, %s);", row)
+        # Chuẩn bị buffer dạng file ảo theo từng phân mảnh, mỗi buffer sẽ chứa dữ liệu cho một phân mảnh
+        buffers = [io.StringIO() for _ in range(numberofpartitions)]
+        
+        for i, row in enumerate(rows):
+            partition_index = i % numberofpartitions 
+            line = f"{row[0]}\t{row[1]}\t{row[2]}\n" #lấy dữ liệu cột userid, movieid, rating và phân tách bằng tab
+            buffers[partition_index].write(line)
 
-    openconnection.commit()
-    cur.close()
+        for i in range(numberofpartitions):
+            # Đặt lại vị trí con trỏ đầu mỗi buffer
+            buffers[i].seek(0)
+            cur.copy_from(buffers[i], f"{RROBIN_TABLE_PREFIX}{i}", columns=("userid", "movieid", "rating"))
 
+        openconnection.commit()
+
+    except Exception as e:
+        openconnection.rollback()
+        raise e
+    finally:
+        if cur:
+            cur.close()
     
 def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
-    cur = openconnection.cursor()
+    try:
+        cur = openconnection.cursor()
 
-    # Chèn vào bảng Ratings
-    cur.execute(f"INSERT INTO {ratingstablename} (userid, movieid, rating) VALUES (%s, %s, %s);", (userid, itemid, rating))
+        # Chèn vào bảng Ratings
+        cur.execute(f"INSERT INTO {ratingstablename} (userid, movieid, rating) VALUES (%s, %s, %s);", (userid, itemid, rating))
 
-    # Lấy thông tin metadata
-    cur.execute("SELECT partition_count, next_index FROM rrobin_metadata;")
-    partition_count, next_index = cur.fetchone()
+        # Lấy thông tin metadata
+        cur.execute("SELECT partition_count, next_index FROM rrobin_metadata;")
+        partition_count, next_index = cur.fetchone()
 
-    RROBIN_TABLE_PREFIX = 'rrobin_part'
-    
-    # Tính phân mảnh tiếp theo cần chèn
-    target_partition = next_index % partition_count
-    cur.execute(f"INSERT INTO {RROBIN_TABLE_PREFIX}{target_partition} (userid, movieid, rating) VALUES (%s, %s, %s);", (userid, itemid, rating))
+        RROBIN_TABLE_PREFIX = 'rrobin_part'
+        
+        # Tính phân mảnh tiếp theo cần chèn
+        target_partition = next_index % partition_count
+        cur.execute(f"INSERT INTO {RROBIN_TABLE_PREFIX}{target_partition} (userid, movieid, rating) VALUES (%s, %s, %s);", (userid, itemid, rating))
 
-    # Cập nhật chỉ số vòng tròn
-    cur.execute("UPDATE rrobin_metadata SET next_index = %s;", (next_index + 1,))
+        # Cập nhật chỉ số vòng tròn
+        cur.execute("UPDATE rrobin_metadata SET next_index = %s;", (next_index + 1,))
 
-    openconnection.commit()
-    cur.close()
+        openconnection.commit()
+    except Exception as e:
+        openconnection.rollback()
+        raise e
+    finally:
+        if cur:
+            cur.close()
