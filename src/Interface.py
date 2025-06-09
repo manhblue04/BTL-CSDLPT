@@ -169,6 +169,16 @@ def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
 
         RANGE_TABLE_PREFIX = 'range_part'
 
+        # Kiểm tra xem dữ liệu đã tồn tại trong bảng gốc chưa
+        cursor.execute(f"""
+            SELECT 1 FROM {ratingstablename}
+            WHERE userid = %s AND movieid = %s AND rating = %s;
+        """, (userid, itemid, rating))
+
+        if cursor.fetchone():
+            print("Dữ liệu đã tồn tại trong Ratings")
+            return
+        
         # Chèn dữ liệu vào bảng chính
         cursor.execute(f"""
             INSERT INTO {ratingstablename} (userid, movieid, rating)
@@ -199,7 +209,7 @@ def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
         raise e
     finally:
         if cursor:
-            cursor.close()            
+            cursor.close()
 
 
 def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
@@ -256,6 +266,16 @@ def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     try:
         cur = openconnection.cursor()
 
+         # Kiểm tra xem dữ liệu đã tồn tại trong bảng gốc chưa
+        cur.execute(f"""
+            SELECT 1 FROM {ratingstablename}
+            WHERE userid = %s AND movieid = %s AND rating = %s;
+        """, (userid, itemid, rating))
+        
+        if cur.fetchone():
+            print("Dữ liệu đã tồn tại trong Ratings")
+            return
+            
         # Chèn vào bảng Ratings
         cur.execute(f"INSERT INTO {ratingstablename} (userid, movieid, rating) VALUES (%s, %s, %s);", (userid, itemid, rating))
 

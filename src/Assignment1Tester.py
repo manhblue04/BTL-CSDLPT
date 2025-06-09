@@ -10,8 +10,8 @@ RROBIN_TABLE_PREFIX = 'rrobin_part'
 USER_ID_COLNAME = 'userid'
 MOVIE_ID_COLNAME = 'movieid'
 RATING_COLNAME = 'rating'
-INPUT_FILE_PATH = 'ratings.dat'
-ACTUAL_ROWS_IN_INPUT_FILE = 10000054  # Number of lines in the input file
+INPUT_FILE_PATH = 'test_data.dat'
+ACTUAL_ROWS_IN_INPUT_FILE = 1500  # Number of lines in the input file
 
 import psycopg2
 import traceback
@@ -42,7 +42,7 @@ if __name__ == '__main__':
 
             # ALERT:: Use only one at a time i.e. uncomment only one line at a time and run the script
             [result, e] = testHelper.testrangeinsert(MyAssignment, RATINGS_TABLE, 100, 2, 3, conn, '2')
-            # [result, e] = testHelper.testrangeinsert(MyAssignment, RATINGS_TABLE, 100, 2, 0, conn, '0')
+            [result, e] = testHelper.testrangeinsert(MyAssignment, RATINGS_TABLE, 100, 2, 0, conn, '0')
             if result:
                 print("rangeinsert function pass!")
             else:
