@@ -157,7 +157,7 @@ def rangepartition(ratingstablename, numberofpartitions, openconnection):
 
 def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
     if not (0 <= rating <= 5):
-        raise Exception("Rating must be between 0 and 5")
+        raise Exception("Rating must be between 0 and 5.")
     if not (isinstance(userid, int) and isinstance(itemid, int) and userid > 0 and itemid > 0):
         raise Exception("UserID and MovieID must be positive integers.")
     
@@ -218,6 +218,7 @@ def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
 
     try:
         cur = openconnection.cursor()
+        
         RROBIN_TABLE_PREFIX = 'rrobin_part'
 
         # Xóa và tạo lại các bảng phân mảnh
@@ -263,6 +264,11 @@ def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
             cur.close()
     
 def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
+    if not (0 <= rating <= 5):
+        raise Exception("Rating must be between 0 and 5.")
+    if not (isinstance(userid, int) and isinstance(itemid, int) and userid > 0 and itemid > 0):
+        raise Exception("UserID and MovieID must be positive integers.")
+    
     try:
         cur = openconnection.cursor()
 
