@@ -11,7 +11,7 @@ USER_ID_COLNAME = 'userid'
 MOVIE_ID_COLNAME = 'movieid'
 RATING_COLNAME = 'rating'
 INPUT_FILE_PATH = 'test_data.dat'
-ACTUAL_ROWS_IN_INPUT_FILE = 20  # Number of lines in the input file
+ACTUAL_ROWS_IN_INPUT_FILE = 1500  # Number of lines in the input file
 
 import psycopg2
 import traceback
@@ -27,13 +27,13 @@ if __name__ == '__main__':
             conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
 
             testHelper.deleteAllPublicTables(conn)
-
+        
             [result, e] = testHelper.testloadratings(MyAssignment, RATINGS_TABLE, INPUT_FILE_PATH, conn, ACTUAL_ROWS_IN_INPUT_FILE)
             if result :
                 print("loadratings function pass!")
             else:
                 print("loadratings function fail!")
-
+                
             [result, e] = testHelper.testrangepartition(MyAssignment, RATINGS_TABLE, 5, conn, 0, ACTUAL_ROWS_IN_INPUT_FILE)
             if result :
                 print("rangepartition function pass!")
@@ -47,6 +47,7 @@ if __name__ == '__main__':
                 print("rangeinsert function pass!")
             else:
                 print("rangeinsert function fail!")
+
 
             testHelper.deleteAllPublicTables(conn)
             MyAssignment.loadratings(RATINGS_TABLE, INPUT_FILE_PATH, conn)
@@ -65,6 +66,7 @@ if __name__ == '__main__':
                 print("roundrobininsert function pass!")
             else:
                 print("roundrobininsert function fail!")
+
 
             choice = input('Press enter to Delete all tables? ')
             if choice == '':
