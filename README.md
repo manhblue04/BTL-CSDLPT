@@ -1,10 +1,7 @@
-# MovieLens Data Fragmentation Project
-
 ## Cách chạy
-1. Cài PostgreSQL/MySQL.
-2. Cài thư viện: `pip install -r requirements.txt`
-3. Chỉnh thông tin kết nối trong `config.json`
-4. Chạy `assignment_tester.py` để kiểm thử.
+1. Cài PostgreSQL.
+2. Cài thư viện: `pip install psycopg2`
+3. Chạy file `Assignment1Tester.py` để kiểm thử.
 
 ## Các hàm chính
 - LoadRatings()
@@ -14,11 +11,11 @@
 - Range_Insert()
 
 ## Thành viên nhóm
-- Nguyễn Văn A - MSSV...
-- Trần Thị B - MSSV...
-- Lê Văn C - MSSV...
+- Bùi Đức Mạnh - B22DCCN519
+- Chu Ngọc Thắng - B22DCCN807
+- Nguyễn Văn Duy - B22DCCN154
 
 ## Phân công
-- A: Load dữ liệu & Range_Partition
-- B: RoundRobin_Partition & Insert
-- C: Báo cáo & kiểm thử
+- Bùi Đức Mạnh: Load dữ liệu & Kiểm thử & Viết báo cáo
+- Chu Ngọc Thắng: Range_Partition & Range_Insert
+- Nguyễn Văn Duy: RoundRobin_Partition & RoundRobin_Insert
