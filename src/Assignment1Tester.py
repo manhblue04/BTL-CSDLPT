@@ -10,8 +10,8 @@ RROBIN_TABLE_PREFIX = 'rrobin_part'
 USER_ID_COLNAME = 'userid'
 MOVIE_ID_COLNAME = 'movieid'
 RATING_COLNAME = 'rating'
-INPUT_FILE_PATH = 'test_data.dat'
-ACTUAL_ROWS_IN_INPUT_FILE = 1500  # Number of lines in the input file
+INPUT_FILE_PATH = 'ratings.dat'
+ACTUAL_ROWS_IN_INPUT_FILE = 10000054  # Number of lines in the input file
 
 import psycopg2
 import traceback
@@ -26,7 +26,7 @@ if __name__ == '__main__':
         with testHelper.getopenconnection(dbname=DATABASE_NAME) as conn:
             conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
 
-            # testHelper.deleteAllPublicTables(conn)
+            testHelper.deleteAllPublicTables(conn)
 
             [result, e] = testHelper.testloadratings(MyAssignment, RATINGS_TABLE, INPUT_FILE_PATH, conn, ACTUAL_ROWS_IN_INPUT_FILE)
             if result :
@@ -58,21 +58,19 @@ if __name__ == '__main__':
             else:
                 print("roundrobinpartition function fail")
 
-            # ALERT:: Change the partition index according to your testing sequence.
-            [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '0')
-            # [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '1')
-            # [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '2')
+            [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 3, 3, conn, '3')
+            [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 4, 4, conn, '4')
             if result :
                 print("roundrobininsert function pass!")
             else:
                 print("roundrobininsert function fail!")
 
 
-            # choice = input('Press enter to Delete all tables? ')
-            # if choice == '':
-            #     testHelper.deleteAllPublicTables(conn)
-            # if not conn.close:
-            #     conn.close()
+            choice = input('Press enter to Delete all tables? ')
+            if choice == '':
+                testHelper.deleteAllPublicTables(conn)
+            if not conn.close:
+                conn.close()
 
     except Exception as detail:
         traceback.print_exc()
